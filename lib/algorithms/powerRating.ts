@@ -1,141 +1,309 @@
 import type { Player, Sport, FilledRosterSlot, TeamPower, DraftMode } from '../types';
 import { clamp, normalizeToRange, sigmoid } from '../utils';
 
-// ─── Era normalization constants ─────────────────────────────────────────────
-// These represent typical seasonal averages for each era, used to z-score stats
+// ─── Shared helpers ───────────────────────────────────────────────────────────
 
-interface EraNorms {
-  points?: { mean: number; std: number };
-  rebounds?: { mean: number; std: number };
-  assists?: { mean: number; std: number };
-  ops?: { mean: number; std: number };
-  era?: { mean: number; std: number };
-  nhlPoints?: { mean: number; std: number };
-  passingYards?: { mean: number; std: number };
-  rushingYards?: { mean: number; std: number };
-  sacks?: { mean: number; std: number };
+// Linear z-score
+function z(value: number, mean: number, std: number): number {
+  return std === 0 ? 0 : (value - mean) / std;
 }
 
-const NBA_NORMS: EraNorms = {
-  points:   { mean: 18, std: 8 },
-  rebounds: { mean: 7,  std: 3.5 },
-  assists:  { mean: 5,  std: 3 },
-};
+// Parse the start year out of an eraId like "nba-14-1995" → 1995
+function eraYear(p: Player): number {
+  if (!p.eraId) return 2000;
+  const parts = p.eraId.split('-');
+  return parseInt(parts[parts.length - 1]) || 2000;
+}
 
-const NFL_OFF_NORMS: EraNorms = {
-  passingYards: { mean: 3800, std: 900 },
-  rushingYards: { mean: 900, std: 400 },
-};
-
-const NFL_DEF_NORMS: EraNorms = {
-  sacks:         { mean: 10, std: 5 },
-};
-
-const MLB_NORMS: EraNorms = {
-  ops: { mean: 0.760, std: 0.100 },
-  era: { mean: 4.0,   std: 0.9 },
-};
-
-const NHL_NORMS: EraNorms = {
-  nhlPoints: { mean: 50, std: 25 },
-};
-
-// ─── Individual Player Score (0–100) ─────────────────────────────────────────
+// ─── NBA: BPM-inspired scoring ────────────────────────────────────────────────
+// Sources: Basketball-Reference BPM (Daniel Myers), Hollinger PER
+//
+// Key insight from BPM research:
+//   • Steals are the highest-weighted individual box-score stat (coeff 1.256)
+//   • True Shooting % (efficiency) beats raw FG% by a large margin
+//   • Assists have a non-linear interaction with scoring usage
+//   • Position baselines matter — a PG with 3 ast is below average; a C with 3 ast is elite
+//
+// TS% approximation from available data:
+//   TS% ≈ FG%×0.55 + 3P%×0.22 + FT%×0.23 + volumeBonus
+//   volumeBonus = max(0, pts − 15) × 0.003   (high scorers draw fouls → extra TS% lift)
 
 function scoreNBAPlayer(p: Player): number {
   const s = p.stats;
-  const ptsZ = normalizeToRange(s.points ?? 0, 18, 8);
-  const rebZ = normalizeToRange(s.rebounds ?? 0, 7, 3.5);
-  const astZ = normalizeToRange(s.assists ?? 0, 5, 3);
-  const fgBonus  = (s.fieldGoalPct ?? 0.45) > 0.50 ? 5 : 0;
-  const stlBlkBonus = ((s.steals ?? 0) + (s.blocks ?? 0)) * 2;
+  const pts = s.points   ?? 0;
+  const reb = s.rebounds ?? 0;
+  const ast = s.assists  ?? 0;
+  const stl = s.steals   ?? 0;
+  const blk = s.blocks   ?? 0;
+  const fg  = s.fieldGoalPct    ?? 0.45;
+  const tp  = s.threePointPct   ?? 0.33;
+  const ft  = s.freeThrowPct    ?? 0.73;
 
-  const raw = ptsZ * 0.40 + rebZ * 0.25 + astZ * 0.25 + fgBonus + clamp(stlBlkBonus, 0, 10);
-  return clamp(raw, 0, 100);
+  // Approximate True Shooting % from available percentages + volume boost
+  const tsApprox = fg * 0.55 + tp * 0.22 + ft * 0.23 + Math.max(0, pts - 15) * 0.003;
+
+  // Position-adjusted baselines: what "average starter" looks like per spot
+  type PosKey = 'PG' | 'SG' | 'SF' | 'PF' | 'C';
+  const BL: Record<PosKey, { pts: number; reb: number; ast: number; stl: number; blk: number; ts: number }> = {
+    PG: { pts: 14.0, reb: 3.5, ast: 7.0, stl: 1.3, blk: 0.3, ts: 0.536 },
+    SG: { pts: 15.0, reb: 4.0, ast: 3.5, stl: 1.1, blk: 0.3, ts: 0.538 },
+    SF: { pts: 15.5, reb: 6.0, ast: 3.0, stl: 1.0, blk: 0.6, ts: 0.534 },
+    PF: { pts: 14.5, reb: 8.5, ast: 2.0, stl: 0.7, blk: 1.0, ts: 0.534 },
+    C:  { pts: 11.5, reb: 9.5, ast: 2.0, stl: 0.6, blk: 1.5, ts: 0.548 },
+  };
+  const b = BL[p.position as PosKey] ?? BL.SF;
+
+  // Standard deviations across the NBA starter population
+  const SD = { pts: 7.0, reb: 3.0, ast: 2.5, stl: 0.45, blk: 0.55, ts: 0.042 };
+
+  // Linear z-scores vs position baseline
+  const TSZ = z(tsApprox,  b.ts,  SD.ts);
+  const STZ = z(stl,       b.stl, SD.stl);  // steals: highest BPM coefficient
+  const PTZ = z(pts,       b.pts, SD.pts);
+  const ASZ = z(ast,       b.ast, SD.ast);
+  const BLZ = z(blk,       b.blk, SD.blk);
+  const REZ = z(reb,       b.reb, SD.reb);
+
+  // BPM-calibrated weights (steals 1.4, TS% 1.3, pts 1.1, ast 1.0, blk 0.8, reb 0.5)
+  const rawScore = TSZ * 1.3 + STZ * 1.4 + PTZ * 1.1 + ASZ * 1.0 + BLZ * 0.8 + REZ * 0.5;
+
+  // Scale: all-time great (Jordan/Curry/LeBron era) → ~88–94; bench player → ~18–25
+  const raw = 50 + rawScore * 4.5;
+  return clamp(raw, 10, 95);
 }
+
+// ─── NFL Offense: Passer Rating + AV-inspired ────────────────────────────────
+// Sources: Official NFL Passer Rating formula (max 158.3, avg ~88 modern era)
+//          PFR Approximate Value methodology
+//
+// QB: Passer rating is the primary efficiency metric (already combines completion%,
+//     yards/attempt, TD%, INT%) — do NOT double-count by also z-scoring TDs/yards
+//     separately at full weight. We add scaled volume bonuses on top.
+// RB: Rushing yards are 60% of value (Approximate Value allocation: 22% of skill pts)
+// WR/TE: Receiving yards + TDs + receptions; YAC and route-running not captured
+// Era adjustment: pre-1978 run-heavy era had much lower passer ratings by design
 
 function scoreNFLOffensePlayer(p: Player): number {
   const s = p.stats;
-  let score = 50;
+  const yr = eraYear(p);
+
+  // Era-adjusted passer rating baseline: the league average shifted significantly
+  // pre-1978 (before the pass-friendly rules), post-2011 (no-contact era)
+  const prMean = yr < 1978 ? 68 : yr < 1994 ? 77 : yr < 2011 ? 86 : 92;
+  const prStd  = 14;
 
   if (p.position === 'QB') {
-    const pyZ = normalizeToRange(s.passingYards ?? 0, 3800, 900);
-    const tdZ = normalizeToRange(s.passingTDs ?? 0, 28, 8);
-    const ratingZ = normalizeToRange(s.passerRating ?? 85, 85, 15);
-    score = pyZ * 0.35 + tdZ * 0.35 + ratingZ * 0.30;
-  } else if (p.position === 'RB') {
-    const ryZ = normalizeToRange(s.rushingYards ?? 0, 900, 400);
-    const tdZ = normalizeToRange(s.rushingTDs ?? 0, 8, 4);
-    score = ryZ * 0.60 + tdZ * 0.40;
-  } else if (p.position === 'WR' || p.position === 'TE') {
-    const rcvZ = normalizeToRange(s.receivingYards ?? 0, 900, 350);
-    const tdZ = normalizeToRange(s.receivingTDs ?? 0, 6, 3);
-    const recZ = normalizeToRange(s.receptions ?? 0, 65, 25);
-    score = rcvZ * 0.45 + tdZ * 0.30 + recZ * 0.25;
-  } else if (p.position === 'K') {
-    score = 55 + (p.isLegend ? 15 : p.isAllStar ? 8 : 0);
+    const ratingZ  = z(s.passerRating  ?? prMean, prMean, prStd);      // efficiency (primary)
+    const yardsZ   = z(s.passingYards  ?? 3000,   3400,   950);        // volume bonus
+    const tdsZ     = z(s.passingTDs    ?? 22,      25,     9);          // volume bonus
+
+    // Passer rating already encodes TD% and INT% — give it most of the weight
+    const rawScore = ratingZ * 1.6 + yardsZ * 0.6 + tdsZ * 0.5;
+    return clamp(50 + rawScore * 8, 20, 95);
   }
 
-  return clamp(score, 0, 100);
+  if (p.position === 'RB') {
+    // Era-adjusted rushing baselines: modern RBs see fewer carries (committee systems)
+    const rushMean = yr < 1990 ? 1150 : yr < 2010 ? 1000 : 850;
+    const rushStd  = 380;
+    const rushZ = z(s.rushingYards ?? 600, rushMean, rushStd);
+    const tdZ   = z(s.rushingTDs   ?? 6,   8,        4);
+    const rawScore = rushZ * 1.4 + tdZ * 0.9;
+    return clamp(50 + rawScore * 9, 20, 95);
+  }
+
+  if (p.position === 'WR' || p.position === 'TE') {
+    // Receiving production: yards primary, TDs and receptions secondary
+    const recYdMean = p.position === 'WR' ? 900 : 700;
+    const rcvZ = z(s.receivingYards ?? 500, recYdMean, 380);
+    const tdZ  = z(s.receivingTDs   ?? 5,   6,         3);
+    const recZ = z(s.receptions     ?? 55,  65,         25);
+    // Yards/catch efficiency proxy: bonus for fewer catches for same yards
+    const ypc = (s.receptions ?? 1) > 0 ? (s.receivingYards ?? 0) / (s.receptions ?? 1) : 0;
+    const ypcBonus = clamp((ypc - 12) / 4, -1, 2);  // elite YPC is a plus
+
+    const rawScore = rcvZ * 1.3 + tdZ * 1.0 + recZ * 0.5 + ypcBonus;
+    return clamp(50 + rawScore * 8.5, 20, 95);
+  }
+
+  if (p.position === 'K') {
+    // Kickers: approximated by accolades; stats not granular enough for reliable ranking
+    return p.isLegend ? 75 : p.isAllStar ? 62 : 50;
+  }
+
+  return 50;
 }
+
+// ─── NFL Defense: Sack-weighted with AV methodology ──────────────────────────
+// Sources: PFR AV — sacks worth 1 AV pt each (added directly), tackles at 0.04/tackle
+//          Interceptions worth 4× the value of a tackle in AV
+// Insight: pass rush and ball-hawking vastly outvalue pure tackle counts
 
 function scoreNFLDefensePlayer(p: Player): number {
   const s = p.stats;
-  let score = 50;
 
   if (p.position === 'DE') {
-    const sackZ = normalizeToRange(s.sacks ?? 0, 10, 5);
-    const tklZ = normalizeToRange(s.tackles ?? 0, 45, 20);
-    score = sackZ * 0.55 + tklZ * 0.45;
-  } else if (p.position === 'DT') {
-    const sackZ = normalizeToRange(s.sacks ?? 0, 6, 3);
-    const tklZ = normalizeToRange(s.tackles ?? 0, 40, 18);
-    score = sackZ * 0.45 + tklZ * 0.55;
-  } else if (p.position === 'LB') {
-    const tklZ = normalizeToRange(s.tackles ?? 0, 100, 30);
-    const sackZ = normalizeToRange(s.sacks ?? 0, 5, 3);
-    const intZ = normalizeToRange(s.interceptions ?? 0, 2, 2);
-    score = tklZ * 0.50 + sackZ * 0.30 + intZ * 0.20;
-  } else if (p.position === 'CB' || p.position === 'S') {
-    const intZ = normalizeToRange(s.interceptions ?? 0, 3, 2);
-    const tklZ = normalizeToRange(s.tackles ?? 0, 60, 25);
-    score = intZ * 0.50 + tklZ * 0.50;
+    // Edge rushers: sacks are primary value (AV: 1 pt/sack)
+    const sackZ = z(s.sacks   ?? 5, 9,  5.5);   // elite DE averages 10-15/yr
+    const tklZ  = z(s.tackles ?? 35, 45, 18);
+    const ffZ   = z(s.forcedFumbles ?? 1, 2, 1.5);
+    const rawScore = sackZ * 1.7 + tklZ * 0.6 + ffZ * 0.5;
+    return clamp(50 + rawScore * 8, 20, 95);
   }
 
-  return clamp(score, 0, 100);
+  if (p.position === 'DT') {
+    // Interior DL: sacks less common but highly valuable; tackles + run-stop
+    const sackZ = z(s.sacks   ?? 3, 4,  3);
+    const tklZ  = z(s.tackles ?? 35, 40, 17);
+    const rawScore = sackZ * 1.5 + tklZ * 0.9;
+    return clamp(50 + rawScore * 8, 20, 95);
+  }
+
+  if (p.position === 'LB') {
+    // Linebackers: tackles primary volume stat, plus sacks and INTs for elite players
+    const tklZ  = z(s.tackles       ?? 80, 95,  30);
+    const sackZ = z(s.sacks         ?? 3,  4,   3);
+    const intZ  = z(s.interceptions ?? 1,  1.5, 1.5);
+    const ffZ   = z(s.forcedFumbles ?? 1,  1.5, 1);
+    // AV-inspired: INT >> sack >> tackle for per-play value; balance with volume
+    const rawScore = tklZ * 0.9 + sackZ * 1.1 + intZ * 1.4 + ffZ * 0.5;
+    return clamp(50 + rawScore * 7.5, 20, 95);
+  }
+
+  if (p.position === 'CB' || p.position === 'S') {
+    // DBs: interceptions are highest-value play in football per AV methodology (4× tackle)
+    const intZ  = z(s.interceptions    ?? 1.5, 2.5,  2.0);
+    const pdZ   = z(s.passDeflections  ?? 6,   9,    5);
+    const tklZ  = z(s.tackles          ?? 55,  65,   22);
+    const ffZ   = z(s.forcedFumbles    ?? 0.5, 1,    0.8);
+    // INTs weighted most (AV: 4 pts each); pass deflections secondary coverage metric
+    const rawScore = intZ * 1.6 + pdZ * 0.9 + tklZ * 0.6 + ffZ * 0.4;
+    return clamp(50 + rawScore * 7.5, 20, 95);
+  }
+
+  return 50;
 }
+
+// ─── MLB Batter: wOBA-inspired (FanGraphs methodology) ───────────────────────
+// Sources: FanGraphs wOBA weights (BB: 0.690, 1B: 0.878, 2B: 1.242, HR: 2.015)
+//          OBP is worth ~1.8× the value of SLG in wOBA run creation
+//          wRC+ = league-adjusted run creation per plate appearance
+//
+// wOBA approximation from OBP + SLG (we have both):
+//   wOBA ≈ OBP × 1.10 + SLG × 0.70   (reflects wOBA BB/single weighting vs extra bases)
+// League avg: OBP 0.320 × 1.10 + SLG 0.410 × 0.70 = 0.352 + 0.287 = 0.639
 
 function scoreMLBBatter(p: Player): number {
   const s = p.stats;
-  const opsZ = normalizeToRange(s.ops ?? 0.700, 0.760, 0.100);
-  const hrBonus = clamp((s.homeRuns ?? 0) / 50 * 10, 0, 10);
-  const sbBonus = clamp((s.stolenBases ?? 0) / 30 * 5, 0, 5);
-  return clamp(opsZ * 0.80 + hrBonus + sbBonus, 0, 100);
+  const obp = s.onBasePct  ?? s.ops !== undefined ? (s.ops ?? 0.750) * 0.42 : 0.320;
+  const slg = s.sluggingPct ?? s.ops !== undefined ? (s.ops ?? 0.750) * 0.58 : 0.410;
+  const hr  = s.homeRuns   ?? 0;
+  const sb  = s.stolenBases ?? 0;
+
+  // wOBA-weighted run creation (OBP weighted 1.57× SLG by wOBA coefficient ratio)
+  const wOBA = obp * 1.10 + slg * 0.70;
+  const LG_WOBA_MEAN = 0.639;
+  const LG_WOBA_STD  = 0.085;
+  const wOBAZ = z(wOBA, LG_WOBA_MEAN, LG_WOBA_STD);
+
+  // Power bonus: HR are highest-value event in wOBA (weight 2.015); reward elite HR output
+  const hrBonus = clamp(hr / 55, 0, 1) * 12;
+  // Speed bonus: SB creates runs above and beyond wOBA (baserunning runs ≈ +0.2 runs/SB)
+  const sbBonus = clamp(sb / 60, 0, 1) * 5;
+
+  const raw = 50 + wOBAZ * 16 + hrBonus + sbBonus;
+  return clamp(raw, 10, 95);
 }
+
+// ─── MLB Pitcher: FIP-inspired (defense-independent) ─────────────────────────
+// Sources: FanGraphs FIP = (13×HR + 3×(BB+HBP) − 2×K) / IP + cFIP
+//          xFIP replaces HR with expected HR based on fly-ball rate
+// We lack HR, BB, IP split; approximate via ERA + WHIP (correlated proxies) + K/9
+// Lower ERA/WHIP = better; K/9 = stuff
+//
+// ERA correlates most with FIP among available stats (r ≈ 0.82 career, lower in-season)
+// WHIP captures walk+ hit prevention which FIP's BB term addresses
+// K/9 is the cleanest individual skill metric (defense-independent by definition)
 
 function scoreMLBPitcher(p: Player): number {
   const s = p.stats;
-  // Lower ERA is better — invert the z-score
-  const eraZ = normalizeToRange(-(s.era ?? 4.0), -4.0, 0.9);
-  const whipZ = normalizeToRange(-(s.whip ?? 1.30), -1.30, 0.20);
-  const kZ = normalizeToRange(s.strikeoutsPerNine ?? 8.0, 8.0, 2.5);
-  const saveBonus = p.position === 'CL' ? clamp((s.saves ?? 0) / 45 * 10, 0, 10) : 0;
-  return clamp(eraZ * 0.40 + whipZ * 0.35 + kZ * 0.20 + saveBonus, 0, 100);
+  const era  = s.era  ?? 4.00;
+  const whip = s.whip ?? 1.30;
+  const k9   = s.strikeoutsPerNine ?? 8.0;
+
+  // Lower ERA/WHIP is better — negate before z-scoring
+  // Elite SP: ERA ~2.5, WHIP ~1.00, K/9 ~10+
+  // Average SP: ERA ~4.00, WHIP ~1.30, K/9 ~7.5
+  const eraZ  = z(-era,  -3.90, 0.80);   // std deviation represents starter spread
+  const whipZ = z(-whip, -1.27, 0.18);
+  const k9Z   = z(k9,     7.8,  2.4);
+
+  // FIP-inspired weights: K/9 is purest skill, ERA captures outcomes, WHIP captures control
+  const rawScore = eraZ * 1.3 + whipZ * 1.1 + k9Z * 1.0;
+
+  // Closer bonus: saves indicate high-leverage dominance; elite closers ~ +8 pts
+  const saveBonus = p.position === 'CL' ? clamp((s.saves ?? 0) / 50, 0, 1) * 10 : 0;
+
+  const raw = 50 + rawScore * 8 + saveBonus;
+  return clamp(raw, 10, 95);
 }
+
+// ─── NHL Skater: Point Shares + era-adjusted baseline ────────────────────────
+// Sources: Hockey-Reference Point Shares (Justin Kubatko)
+//          Evolving Hockey xGAR (goals above replacement)
+//
+// Critical: scoring rates varied enormously by era
+//   1980–91 (high-offense): league avg ~50 pts/player/yr, Gretzky had 163–215
+//   1992–04 (transition):   league avg ~45 pts
+//   2005–13 (post-lockout): league avg ~40 pts, elite ~90
+//   2014+   (modern):       league avg ~38 pts, elite ~80–90
+// We adjust the points baseline so a given raw total is judged against its era peers.
 
 function scoreNHLSkater(p: Player): number {
-  const s = p.stats;
-  const ptsZ = normalizeToRange(s.nhlPoints ?? 50, 50, 25);
-  const plusMinusZ = normalizeToRange(s.plusMinus ?? 0, 0, 15);
-  const ppBonus = clamp((s.powerPlayGoals ?? 0) * 0.8, 0, 8);
-  return clamp(ptsZ * 0.65 + plusMinusZ * 0.25 + ppBonus, 0, 100);
+  const s   = p.stats;
+  const yr  = eraYear(p);
+
+  // Era-adjusted points baseline (per full season equivalent)
+  const ptsMean = yr < 1992 ? 72 : yr < 2005 ? 60 : yr < 2015 ? 52 : 48;
+  const ptsStd  = yr < 1992 ? 32 : 26;
+
+  // Plus-minus baseline: higher in defensive-era, lower in run-and-gun era
+  const pmMean = yr < 1992 ? 5 : 0;
+  const pmStd  = 18;
+
+  const ptsZ   = z(s.nhlPoints ?? ptsMean, ptsMean, ptsStd);
+  const pmZ    = z(s.plusMinus ?? 0,       pmMean,  pmStd);
+  const ppBonus = clamp((s.powerPlayGoals ?? 0) * 0.9, 0, 10);
+
+  // Points (offense proxy) weighted more; plus-minus adds defensive context
+  const rawScore = ptsZ * 1.5 + pmZ * 0.9;
+  const raw = 50 + rawScore * 9 + ppBonus;
+  return clamp(raw, 10, 95);
 }
 
+// ─── NHL Goalie: Save% + GAA (defense-independent quality) ───────────────────
+// Save% is era-independent and the cleanest single goalie metric
+// GAA is context-dependent (team defense) but useful alongside Sv%
+
 function scoreNHLGoalie(p: Player): number {
-  const s = p.stats;
-  const svPctZ = normalizeToRange(s.savePct ?? 0.910, 0.910, 0.012);
-  const gaaNeg = normalizeToRange(-(s.goalsAgainstAvg ?? 2.8), -2.8, 0.4);
-  return clamp(svPctZ * 0.55 + gaaNeg * 0.45, 0, 100);
+  const s  = p.stats;
+  const yr = eraYear(p);
+
+  // Sv% improved with equipment/rules: pre-1990 average ~0.878, modern ~0.910
+  const svMean = yr < 1992 ? 0.878 : yr < 2005 ? 0.900 : 0.911;
+  const svStd  = 0.012;
+
+  // GAA: lower is better, era-adjusted baseline
+  const gaaMean = yr < 1992 ? 3.5 : yr < 2005 ? 2.9 : 2.65;
+  const gaaStd  = 0.40;
+
+  const svZ  = z(s.savePct          ?? svMean,   svMean,  svStd);
+  const gaaZ = z(-(s.goalsAgainstAvg ?? gaaMean), -gaaMean, gaaStd);
+
+  // Sv% slightly more predictive of true talent than GAA (GAA team-dependent)
+  const rawScore = svZ * 1.3 + gaaZ * 1.0;
+  const raw = 50 + rawScore * 10;
+  return clamp(raw, 10, 95);
 }
 
 export function computePlayerScore(player: Player, sport: Sport): number {
@@ -161,9 +329,10 @@ export function computePlayerScore(player: Player, sport: Sport): number {
       base = 50;
   }
 
-  // Apply greatness multipliers
-  if (player.isLegend) base = clamp(base * 1.15, 0, 100);
-  else if (player.isAllStar) base = clamp(base * 1.08, 0, 100);
+  // Small accolade multiplier — new stat-based algo already captures most elite performance;
+  // this just nudges players whose intangibles (defense, leadership) aren't fully in the box score
+  if (player.isLegend) base = clamp(base * 1.07, 0, 100);
+  else if (player.isAllStar) base = clamp(base * 1.03, 0, 100);
 
   return Math.round(base * 10) / 10;
 }
