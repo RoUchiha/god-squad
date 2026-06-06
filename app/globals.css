@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root {
+  --sport-primary: #F26522;
+  --sport-accent: #FDB927;
+  --sport-bg: #1a0f00;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: #0a0a0a;
+  color: #e5e7eb;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+/* Sport theme classes applied to the game area */
+.theme-nba { --sport-primary: #F26522; --sport-accent: #FDB927; --sport-bg: #1a0a00; }
+.theme-nfl { --sport-primary: #013369; --sport-accent: #D50A0A; --sport-bg: #000818; }
+.theme-mlb { --sport-primary: #002D72; --sport-accent: #E31837; --sport-bg: #000A1A; }
+.theme-nhl { --sport-primary: #003087; --sport-accent: #FCB514; --sport-bg: #001020; }
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #1a1a1a; }
+::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4a4a4a; }
+
+/* Custom utility classes */
+@layer utilities {
+  .text-sport-primary { color: var(--sport-primary); }
+  .text-sport-accent { color: var(--sport-accent); }
+  .bg-sport-primary { background-color: var(--sport-primary); }
+  .bg-sport-accent { background-color: var(--sport-accent); }
+  .border-sport-primary { border-color: var(--sport-primary); }
+  .border-sport-accent { border-color: var(--sport-accent); }
+
+  .glow-sport {
+    box-shadow: 0 0 15px var(--sport-primary), 0 0 30px color-mix(in srgb, var(--sport-primary) 30%, transparent);
+  }
+
+  .glow-gold {
+    box-shadow: 0 0 15px #ffd700, 0 0 30px rgba(255, 215, 0, 0.4);
+  }
+
+  .glow-red {
+    box-shadow: 0 0 15px #ff4444, 0 0 30px rgba(255, 68, 68, 0.4);
+  }
+}
+
+/* Glass morphism cards */
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glass-hover:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Power meter animation */
+@keyframes power-fill {
+  from { width: 0%; }
+  to { width: var(--target-width); }
+}
+
+.power-bar-fill {
+  animation: power-fill 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Undefeated celebration */
+@keyframes celebration-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 30px #ff4444; }
+  50% { transform: scale(1.02); box-shadow: 0 0 60px #ff4444, 0 0 100px rgba(255,68,68,0.5); }
+}
+
+.celebrate {
+  animation: celebration-pulse 1.5s ease-in-out infinite;
+}
+
+/* Loading skeleton */
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #1a1a1a 25%, #2a2a2a 50%, #1a1a1a 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
