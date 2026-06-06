@@ -282,6 +282,8 @@ const HISTORICAL_ROSTERS: Record<string, HistoricalPlayer[]> = {
   ],
 };
 
+export const NFL_CURATED_ERA_KEYS = Object.keys(HISTORICAL_ROSTERS);
+
 const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
 
 interface ESPNAthlete {

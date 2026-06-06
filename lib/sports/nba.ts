@@ -279,6 +279,8 @@ function fakeName(seed: number): string {
   return `${FIRST_NAMES[seed % FIRST_NAMES.length]} ${LAST_NAMES[(seed * 7 + 3) % LAST_NAMES.length]}`;
 }
 
+export const NBA_CURATED_ERA_KEYS = Object.keys(NBA_HISTORICAL_ROSTERS);
+
 export async function fetchNBAPlayers(team: HistoricalTeam, era: Era, _apiKey?: string): Promise<Player[]> {
   // Check hardcoded historical roster first
   const key = `${team.id}-${era.id}`;
