@@ -10,7 +10,7 @@
  * immediately on first click before the parent re-renders.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { Player, Sport, DraftMode } from '@/lib/types';
 import PlayerCard from './PlayerCard';
 
@@ -28,29 +28,33 @@ const SKELETON_COUNT = 8;
 export default function PlayerPool({ players, isLoading, sport, mode, onDraft, onSkip }: Props) {
   const [selected, setSelected] = useState<Player | null>(null);
   const [draftFired, setDraftFired] = useState(false);
+  // Ref mirrors draftFired — read at call-time so rapid clicks see the
+  // updated value even before React re-renders with the new state.
+  const draftFiredRef = useRef(false);
 
   const visiblePlayers = (sport === 'nfl' && mode && mode !== 'combined')
     ? players.filter(p => p.positionGroup === mode)
     : players;
 
   const handleCardClick = useCallback((player: Player) => {
-    if (draftFired) return;
-    // Toggle selection — click same card again to deselect
+    if (draftFiredRef.current) return;
     setSelected(prev => prev?.id === player.id ? null : player);
-  }, [draftFired]);
+  }, []);
 
   const handleDraft = useCallback(() => {
-    if (!selected || draftFired) return;
-    // Disable immediately — synchronous, before parent re-renders
-    setDraftFired(true);
+    if (!selected || draftFiredRef.current) return;
+    // Write ref FIRST — synchronous, never stale in closures
+    draftFiredRef.current = true;
+    setDraftFired(true);  // visual only
     onDraft(selected);
-  }, [selected, draftFired, onDraft]);
+  }, [selected, onDraft]);
 
   const handleSkip = useCallback(() => {
-    if (draftFired) return;
+    if (draftFiredRef.current) return;
+    draftFiredRef.current = true;
     setDraftFired(true);
     onSkip();
-  }, [draftFired, onSkip]);
+  }, [onSkip]);
 
   return (
     <div className="flex flex-col h-full">
