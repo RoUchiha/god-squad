@@ -65,59 +65,59 @@ export const NBA_ROSTER: RosterSlotTemplate[] = [
   { id: '6man',  position: ['PG','SG','SF','PF','C'],       label: '6th Man',        group: 'offense', required: true },
 ];
 
-// 20-0.com style: full 22-man starting lineup
+// Full starting lineup — all slots required (fantasy-team style)
 export const NFL_OFFENSE_ROSTER: RosterSlotTemplate[] = [
   { id: 'qb',  position: 'QB', label: 'Quarterback',     group: 'offense', required: true },
   { id: 'rb1', position: 'RB', label: 'Running Back',    group: 'offense', required: true },
-  { id: 'rb2', position: 'RB', label: 'Fullback / RB2',  group: 'offense', required: false },
+  { id: 'rb2', position: 'RB', label: 'Fullback / RB2',  group: 'offense', required: true },
   { id: 'wr1', position: 'WR', label: 'Wide Receiver 1', group: 'offense', required: true },
   { id: 'wr2', position: 'WR', label: 'Wide Receiver 2', group: 'offense', required: true },
-  { id: 'wr3', position: 'WR', label: 'Slot Receiver',   group: 'offense', required: false },
+  { id: 'wr3', position: 'WR', label: 'Slot Receiver',   group: 'offense', required: true },
   { id: 'te1', position: 'TE', label: 'Tight End',       group: 'offense', required: true },
-  { id: 'te2', position: 'TE', label: 'H-Back / TE2',    group: 'offense', required: false },
-  { id: 'k',   position: 'K',  label: 'Kicker',          group: 'offense', required: false },
+  { id: 'te2', position: 'TE', label: 'H-Back / TE2',    group: 'offense', required: true },
+  { id: 'k',   position: 'K',  label: 'Kicker',          group: 'offense', required: true },
 ];
 
 export const NFL_DEFENSE_ROSTER: RosterSlotTemplate[] = [
   { id: 'de1', position: 'DE', label: 'Defensive End 1',  group: 'defense', required: true },
   { id: 'de2', position: 'DE', label: 'Defensive End 2',  group: 'defense', required: true },
   { id: 'dt1', position: 'DT', label: 'Defensive Tackle', group: 'defense', required: true },
-  { id: 'dt2', position: 'DT', label: 'Nose Tackle',      group: 'defense', required: false },
+  { id: 'dt2', position: 'DT', label: 'Nose Tackle',      group: 'defense', required: true },
   { id: 'lb1', position: 'LB', label: 'Linebacker 1',     group: 'defense', required: true },
   { id: 'lb2', position: 'LB', label: 'Linebacker 2',     group: 'defense', required: true },
-  { id: 'lb3', position: 'LB', label: 'Linebacker 3',     group: 'defense', required: false },
+  { id: 'lb3', position: 'LB', label: 'Linebacker 3',     group: 'defense', required: true },
   { id: 'cb1', position: 'CB', label: 'Cornerback 1',     group: 'defense', required: true },
   { id: 'cb2', position: 'CB', label: 'Cornerback 2',     group: 'defense', required: true },
   { id: 'fs',  position: 'S',  label: 'Free Safety',      group: 'defense', required: true },
-  { id: 'ss',  position: 'S',  label: 'Strong Safety',    group: 'defense', required: false },
+  { id: 'ss',  position: 'S',  label: 'Strong Safety',    group: 'defense', required: true },
 ];
 
 export const MLB_OFFENSE_ROSTER: RosterSlotTemplate[] = [
-  { id: 'c_mlb', position: 'C_MLB', label: 'Catcher', group: 'offense', required: true },
-  { id: '1b', position: '1B', label: 'First Base', group: 'offense', required: true },
-  { id: '2b', position: '2B', label: 'Second Base', group: 'offense', required: true },
-  { id: '3b', position: '3B', label: 'Third Base', group: 'offense', required: true },
-  { id: 'ss', position: 'SS', label: 'Shortstop', group: 'offense', required: true },
-  { id: 'lf', position: 'LF', label: 'Left Field', group: 'offense', required: true },
-  { id: 'cf', position: 'CF', label: 'Center Field', group: 'offense', required: true },
-  { id: 'rf', position: 'RF', label: 'Right Field', group: 'offense', required: true },
-  { id: 'dh', position: 'DH', label: 'Designated Hitter', group: 'offense', required: false },
+  { id: 'c_mlb', position: 'C_MLB', label: 'Catcher',             group: 'offense', required: true },
+  { id: '1b',    position: '1B',    label: 'First Base',           group: 'offense', required: true },
+  { id: '2b',    position: '2B',    label: 'Second Base',          group: 'offense', required: true },
+  { id: '3b',    position: '3B',    label: 'Third Base',           group: 'offense', required: true },
+  { id: 'ss',    position: 'SS',    label: 'Shortstop',            group: 'offense', required: true },
+  { id: 'lf',    position: 'LF',    label: 'Left Field',           group: 'offense', required: true },
+  { id: 'cf',    position: 'CF',    label: 'Center Field',         group: 'offense', required: true },
+  { id: 'rf',    position: 'RF',    label: 'Right Field',          group: 'offense', required: true },
+  { id: 'dh',    position: 'DH',    label: 'Designated Hitter',   group: 'offense', required: true },
 ];
 
 export const MLB_PITCHING_ROSTER: RosterSlotTemplate[] = [
   { id: 'sp1', position: 'SP', label: 'Starting Pitcher 1', group: 'pitching', required: true },
   { id: 'sp2', position: 'SP', label: 'Starting Pitcher 2', group: 'pitching', required: true },
-  { id: 'cl', position: 'CL', label: 'Closer', group: 'pitching', required: true },
-  { id: 'rp', position: 'RP', label: 'Relief Pitcher', group: 'pitching', required: false },
+  { id: 'cl',  position: 'CL', label: 'Closer',             group: 'pitching', required: true },
+  { id: 'rp',  position: 'RP', label: 'Relief Pitcher',     group: 'pitching', required: true },
 ];
 
 export const NHL_OFFENSE_ROSTER: RosterSlotTemplate[] = [
-  { id: 'lw1', position: 'LW', label: 'Left Wing 1', group: 'offense', required: true },
-  { id: 'c1', position: 'C_NHL', label: 'Center 1', group: 'offense', required: true },
-  { id: 'rw1', position: 'RW', label: 'Right Wing 1', group: 'offense', required: true },
-  { id: 'lw2', position: 'LW', label: 'Left Wing 2', group: 'offense', required: false },
-  { id: 'c2', position: 'C_NHL', label: 'Center 2', group: 'offense', required: false },
-  { id: 'rw2', position: 'RW', label: 'Right Wing 2', group: 'offense', required: false },
+  { id: 'lw1', position: 'LW',    label: 'Left Wing 1',  group: 'offense', required: true },
+  { id: 'c1',  position: 'C_NHL', label: 'Center 1',     group: 'offense', required: true },
+  { id: 'rw1', position: 'RW',    label: 'Right Wing 1', group: 'offense', required: true },
+  { id: 'lw2', position: 'LW',    label: 'Left Wing 2',  group: 'offense', required: true },
+  { id: 'c2',  position: 'C_NHL', label: 'Center 2',     group: 'offense', required: true },
+  { id: 'rw2', position: 'RW',    label: 'Right Wing 2', group: 'offense', required: true },
 ];
 
 export const NHL_DEFENSE_ROSTER: RosterSlotTemplate[] = [

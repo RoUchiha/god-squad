@@ -50,7 +50,7 @@ function scoreNBAPlayer(p: Player): number {
     + stl  * 9.0   // steal = possession change + fast break opportunity
     + blk  * 4.5   // disrupts shot, may not change possession
     + reb  * 1.8,  // extends or ends possessions
-    0, 500
+    0, 300
   );
 }
 
@@ -231,33 +231,62 @@ function scoreNHLGoalie(p: Player): number {
   return clamp(svScore + gaaScore, 0, 500);
 }
 
+// ─── Calibration helper ───────────────────────────────────────────────────────
+// Linear mapping: avgRaw → 60 (bell-curve center), goatRaw → 94 (before tier boost).
+// Each sport's scoring function returns a raw value; this converts it to the
+// 25–99 absolute scale so scores are the same on every page load.
+function calibrate(raw: number, avgRaw: number, goatRaw: number): number {
+  const slope = 34 / (goatRaw - avgRaw);
+  return clamp(60 + (raw - avgRaw) * slope, 25, 99);
+}
+
 export function computePlayerScore(player: Player, sport: Sport): number {
   let base: number;
 
   switch (sport) {
     case 'nba':
-      base = scoreNBAPlayer(player);
+      base = calibrate(scoreNBAPlayer(player), 59, 145);
       break;
     case 'nfl':
-      if (player.positionGroup === 'offense') base = scoreNFLOffensePlayer(player);
-      else base = scoreNFLDefensePlayer(player);
+      if (player.positionGroup === 'offense') {
+        const nflOffAvg: Record<string, number> = { QB: 41, RB: 28, WR: 48, TE: 48, K: 0 };
+        const nflOffGoat: Record<string, number> = { QB: 82, RB: 51, WR: 104, TE: 104, K: 0 };
+        const avg  = nflOffAvg[player.position]  ?? 40;
+        const goat = nflOffGoat[player.position] ?? 80;
+        base = avg > 0 ? calibrate(scoreNFLOffensePlayer(player), avg, goat) : scoreNFLOffensePlayer(player);
+      } else {
+        const nflDefAvg: Record<string, number> = { DE: 50, DT: 32, LB: 57, CB: 57, S: 57 };
+        const nflDefGoat: Record<string, number> = { DE: 130, DT: 69, LB: 110, CB: 122, S: 122 };
+        const avg  = nflDefAvg[player.position]  ?? 50;
+        const goat = nflDefGoat[player.position] ?? 110;
+        base = calibrate(scoreNFLDefensePlayer(player), avg, goat);
+      }
       break;
     case 'mlb':
-      if (player.positionGroup === 'offense') base = scoreMLBBatter(player);
-      else base = scoreMLBPitcher(player);
+      if (player.positionGroup === 'offense') base = calibrate(scoreMLBBatter(player), 50, 173);
+      else base = calibrate(scoreMLBPitcher(player), 58, 90);
       break;
     case 'nhl':
-      if (player.position === 'G_NHL') base = scoreNHLGoalie(player);
-      else base = scoreNHLSkater(player);
+      if (player.position === 'G_NHL') base = calibrate(scoreNHLGoalie(player), 40, 80);
+      else base = calibrate(scoreNHLSkater(player), 59, 266);
       break;
     default:
       base = 50;
   }
 
-  // Small accolade multiplier — new stat-based algo already captures most elite performance;
-  // this just nudges players whose intangibles (defense, leadership) aren't fully in the box score
-  if (player.isLegend) base = clamp(base * 1.07, 0, 100);
-  else if (player.isAllStar) base = clamp(base * 1.03, 0, 100);
+  // ── 2K-style tier floors & ceilings ─────────────────────────────────────────
+  // isLegend  = Hall of Fame / GOAT tier: floor 88, GOATs can reach 99
+  // isAllStar = Multi All-Star level: floor 75, max 95
+  // Regular:  natural stats-based score, max 82 (non-accolade players)
+  if (player.isLegend) {
+    base = Math.max(base, 88);                // HOF floor
+    base = Math.min(99, base * 1.06);         // GOAT boost — allows Jordan/Gretzky etc. to reach 99
+  } else if (player.isAllStar) {
+    base = Math.max(base, 75);                // All-Star floor
+    base = Math.min(95, base * 1.02);         // small intangibles bump
+  } else {
+    base = Math.min(base, 82);                // cap non-accolade players at 82
+  }
 
   return Math.round(base * 10) / 10;
 }

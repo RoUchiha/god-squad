@@ -23,24 +23,8 @@ const TEAMS_BY_SPORT: Record<Sport, HistoricalTeam[]> = {
   nfl: NFL_TEAMS,
 };
 
-// Re-score players relative to each other within this pool.
-// Raw scores reflect position-normalized ability; pool normalization maps the
-// best player to ~95 and the weakest contributor to ~18, preserving rank order.
-function normalizePoolScores(players: Player[]): Player[] {
-  if (players.length < 2) return players;
-  const scores = players.map(p => p.playerScore);
-  const min = Math.min(...scores);
-  const max = Math.max(...scores);
-  if (max === min) return players;
-  const TARGET_MIN = 18;
-  const TARGET_MAX = 95;
-  return players.map(p => ({
-    ...p,
-    playerScore: Math.round(
-      (TARGET_MIN + ((p.playerScore - min) / (max - min)) * (TARGET_MAX - TARGET_MIN)) * 10
-    ) / 10,
-  }));
-}
+// Scores are absolute (2K-style 25–99 scale) — no pool normalization needed.
+// Deterministic from hardcoded stats + accolade flags; never shifts on refresh.
 
 export async function GET(
   req: NextRequest,
@@ -94,9 +78,6 @@ export async function GET(
       default:
         return NextResponse.json({ error: 'Sport not implemented' }, { status: 501 });
     }
-
-    // Normalize player scores relative to this pool (0–100 scale, best player ~95)
-    players = normalizePoolScores(players);
 
     const response: PlayersResponse = { players, era, team };
 
