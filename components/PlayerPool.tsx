@@ -1,6 +1,6 @@
 'use client';
 
-import type { Player, Sport } from '@/lib/types';
+import type { Player, Sport, DraftMode } from '@/lib/types';
 import PlayerCard from './PlayerCard';
 
 interface Props {
@@ -9,11 +9,18 @@ interface Props {
   selectedIds: Set<string>;
   onSelect: (player: Player) => void;
   sport: Sport;
+  mode?: DraftMode;
   highlightPositions: Player['position'][] | null;
   activePick: Player | null;
+  pickLocked?: boolean;
 }
 
-export default function PlayerPool({ players, isLoading, selectedIds, onSelect, sport, highlightPositions, activePick }: Props) {
+export default function PlayerPool({ players, isLoading, selectedIds, onSelect, sport, mode, highlightPositions, activePick, pickLocked }: Props) {
+  // Filter player pool for NFL offense/defense mode
+  const visiblePlayers = (sport === 'nfl' && mode && mode !== 'combined')
+    ? players.filter(p => p.positionGroup === mode)
+    : players;
+
   return (
     <div className="flex flex-col">
       <div className="flex items-center justify-between mb-3">
@@ -24,9 +31,12 @@ export default function PlayerPool({ players, isLoading, selectedIds, onSelect, 
               Placing <span className="font-semibold">{activePick.name}</span> — choose a slot →
             </p>
           )}
+          {pickLocked && !activePick && (
+            <p className="text-xs text-green-400 mt-0.5">Player placed — click Next Pick to continue</p>
+          )}
         </div>
-        {!isLoading && players.length > 0 && !activePick && (
-          <span className="text-xs text-gray-600">{players.length} players</span>
+        {!isLoading && visiblePlayers.length > 0 && !activePick && (
+          <span className="text-xs text-gray-600">{visiblePlayers.length} players</span>
         )}
       </div>
 
@@ -36,13 +46,13 @@ export default function PlayerPool({ players, isLoading, selectedIds, onSelect, 
             <div key={i} className="skeleton h-20 rounded-lg" />
           ))}
         </div>
-      ) : players.length === 0 ? (
+      ) : visiblePlayers.length === 0 ? (
         <div className="glass rounded-lg p-8 text-center text-gray-600 text-sm">
           No players loaded yet
         </div>
       ) : (
-        <div className="space-y-1.5 overflow-y-auto max-h-[60vh] lg:max-h-[calc(100vh-280px)] pr-1">
-          {players.map(player => (
+        <div className={`space-y-1.5 overflow-y-auto max-h-[60vh] lg:max-h-[calc(100vh-280px)] pr-1 ${pickLocked ? 'opacity-40 pointer-events-none' : ''}`}>
+          {visiblePlayers.map(player => (
             <PlayerCard
               key={player.id}
               player={player}

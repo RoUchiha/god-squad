@@ -46,13 +46,20 @@ const PlayerStatsSchema = z.object({
   goalsAgainstAvg: z.number().optional(),
   penaltyMinutes: z.number().optional(),
   powerPlayGoals: z.number().optional(),
+  soccerGoals: z.number().optional(),
+  soccerAssists: z.number().optional(),
+  soccerApps: z.number().optional(),
+  cleanSheets: z.number().optional(),
+  savePctSoc: z.number().optional(),
+  keyPasses: z.number().optional(),
+  tacklesPG: z.number().optional(),
 }).strict();
 
 const PlayerSchema = z.object({
   id: z.string().max(60),
   name: z.string().max(80),
   position: z.string().max(10),
-  positionGroup: z.enum(['offense', 'defense', 'pitching', 'goalie']),
+  positionGroup: z.enum(['offense', 'defense', 'pitching', 'goalie']).or(z.string()),
   yearsWithTeam: z.string().max(20),
   stats: PlayerStatsSchema,
   playerScore: z.number().min(0).max(100),
@@ -64,13 +71,13 @@ const RosterSlotSchema = z.object({
   id: z.string(),
   position: z.union([z.string(), z.array(z.string())]),
   label: z.string(),
-  group: z.enum(['offense', 'defense', 'pitching', 'goalie']),
+  group: z.enum(['offense', 'defense', 'pitching', 'goalie']).or(z.string()),
   required: z.boolean(),
   player: PlayerSchema.nullable(),
 });
 
 const SimulateBodySchema = z.object({
-  sport: z.enum(['nba', 'nfl', 'mlb', 'nhl']),
+  sport: z.enum(['nba', 'nfl', 'mlb', 'nhl', 'epl', 'wcup']),
   mode: z.enum(['offense', 'defense', 'combined']),
   slots: z.array(RosterSlotSchema).max(30),
 });

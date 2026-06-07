@@ -231,6 +231,38 @@ function scoreNHLGoalie(p: Player): number {
   return clamp(svScore + gaaScore, 0, 500);
 }
 
+// ─── Soccer ───────────────────────────────────────────────────────────────────
+
+function scoreSoccerGK(p: Player): number {
+  const s = p.stats;
+  const saveAdj = ((s.savePctSoc ?? 0.70) - 0.65) * 200;
+  return clamp((s.cleanSheets ?? 0) * 3.5 + saveAdj, 0, 300);
+}
+
+function scoreSoccerDefender(p: Player): number {
+  const s = p.stats;
+  return clamp(
+    (s.soccerGoals ?? 0) * 4.0
+    + (s.soccerAssists ?? 0) * 3.0
+    + (s.tacklesPG ?? 0) * 8.0
+    + (s.keyPasses ?? 0) * 2.0,
+    0, 300
+  );
+}
+
+function scoreSoccerAttacker(p: Player): number {
+  const s = p.stats;
+  const apps = Math.max(1, s.soccerApps ?? 30);
+  const goalPer90 = (s.soccerGoals ?? 0) / (apps / 90);
+  return clamp(
+    (s.soccerGoals ?? 0) * 6.0
+    + (s.soccerAssists ?? 0) * 4.0
+    + (s.keyPasses ?? 0) * 2.5
+    + Math.min(goalPer90 * 3, 10),
+    0, 300
+  );
+}
+
 // ─── Calibration helper ───────────────────────────────────────────────────────
 // Linear mapping: avgRaw → 60 (bell-curve center), goatRaw → 94 (before tier boost).
 // Each sport's scoring function returns a raw value; this converts it to the
@@ -270,6 +302,12 @@ export function computePlayerScore(player: Player, sport: Sport): number {
       if (player.position === 'G_NHL') base = calibrate(scoreNHLGoalie(player), 40, 80);
       else base = calibrate(scoreNHLSkater(player), 59, 266);
       break;
+    case 'epl':
+    case 'wcup':
+      if (player.position === 'GK') base = calibrate(scoreSoccerGK(player), 30, 80);
+      else if (player.positionGroup === 'defense') base = calibrate(scoreSoccerDefender(player), 20, 60);
+      else base = calibrate(scoreSoccerAttacker(player), 25, 100);
+      break;
     default:
       base = 50;
   }
@@ -294,10 +332,12 @@ export function computePlayerScore(player: Player, sport: Sport): number {
 // ─── Team GSPR Calculation ────────────────────────────────────────────────────
 
 const SPORT_WEIGHTS: Record<Sport, { offense: number; defense: number; depth: number }> = {
-  nba: { offense: 0.55, defense: 0.35, depth: 0.10 },
-  nfl: { offense: 0.45, defense: 0.45, depth: 0.10 },
-  mlb: { offense: 0.50, defense: 0.40, depth: 0.10 },
-  nhl: { offense: 0.50, defense: 0.30, depth: 0.10 }, // goalie weight absorbed into defense
+  nba:  { offense: 0.55, defense: 0.35, depth: 0.10 },
+  nfl:  { offense: 0.45, defense: 0.45, depth: 0.10 },
+  mlb:  { offense: 0.50, defense: 0.40, depth: 0.10 },
+  nhl:  { offense: 0.50, defense: 0.30, depth: 0.10 },
+  epl:  { offense: 0.50, defense: 0.40, depth: 0.10 },
+  wcup: { offense: 0.50, defense: 0.40, depth: 0.10 },
 };
 
 function weightedAverage(scores: number[], weights?: number[]): number {
@@ -464,8 +504,116 @@ function physicalBonus(players: Player[], sport: Sport): BonusResult {
   return { total: bonus, labels };
 }
 
+// ─── Sport-specific stat combo bonuses ───────────────────────────────────────
+
+function nflStatComboBonus(players: Player[]): BonusResult {
+  const labels: string[] = [];
+  let bonus = 0;
+  const qbs  = players.filter(p => p.position === 'QB'  && (p.stats.passerRating ?? 0) >= 95);
+  const wrs  = players.filter(p => p.position === 'WR'  && (p.stats.receivingYards ?? 0) >= 1200);
+  const rbs  = players.filter(p => p.position === 'RB'  && (p.stats.rushingYards ?? 0) >= 1400);
+  const des  = players.filter(p => p.position === 'DE'  && (p.stats.sacks ?? 0) >= 14);
+  const lbs  = players.filter(p => p.position === 'LB'  && (p.stats.tackles ?? 0) >= 100);
+  const cbs  = players.filter(p => p.position === 'CB'  && (p.stats.interceptions ?? 0) >= 5);
+
+  if (qbs.length > 0 && wrs.length >= 2) {
+    bonus += 9; labels.push(`🎯 Air Raid — ${qbs[0].name} with two elite WRs (+9)`);
+  } else if (qbs.length > 0 && wrs.length === 1) {
+    bonus += 6; labels.push(`🎯 Ace Connection — ${qbs[0].name} & ${wrs[0].name} (+6)`);
+  }
+  if (rbs.length >= 2) {
+    bonus += 7; labels.push(`🏃 Backfield Beast — Two 1,400-yard rushers (+7)`);
+  } else if (rbs.length === 1 && qbs.length > 0) {
+    bonus += 5; labels.push(`💪 Run-Pass Balance — ${rbs[0].name} keeps D honest (+5)`);
+  }
+  if (des.length >= 2) {
+    bonus += 8; labels.push(`😤 Pass-Rush Duo — ${des[0].name} & ${des[1].name} terrorize QBs (+8)`);
+  }
+  if (lbs.length >= 2 && cbs.length >= 2) {
+    bonus += 7; labels.push(`🛡️ Lockdown Defense — Elite LBs + shutdown CBs (+7)`);
+  } else if (cbs.length >= 2) {
+    bonus += 5; labels.push(`🔒 Cover Corner Duo — ${cbs[0].name} & ${cbs[1].name} (+5)`);
+  }
+  return { total: bonus, labels };
+}
+
+function mlbStatComboBonus(players: Player[]): BonusResult {
+  const labels: string[] = [];
+  let bonus = 0;
+  const sluggers  = players.filter(p => (p.stats.homeRuns ?? 0) >= 35);
+  const aces      = players.filter(p => p.positionGroup === 'pitching' && (p.stats.era ?? 9) < 2.8);
+  const speedsters = players.filter(p => (p.stats.stolenBases ?? 0) >= 30);
+  const obpKings  = players.filter(p => (p.stats.onBasePct ?? 0) >= 0.380);
+
+  if (sluggers.length >= 3) {
+    bonus += 9; labels.push(`💣 Murderers Row — Three 35+ HR hitters (+9)`);
+  } else if (sluggers.length >= 2) {
+    bonus += 6; labels.push(`💣 Power Duo — ${sluggers[0].name} & ${sluggers[1].name} (+6)`);
+  }
+  if (aces.length >= 2) {
+    bonus += 8; labels.push(`⚾ 1-2 Ace Rotation — ${aces[0].name} & ${aces[1].name} dominate (+8)`);
+  } else if (aces.length === 1) {
+    bonus += 4; labels.push(`⚾ Ace on the Mound — ${aces[0].name} carries the staff (+4)`);
+  }
+  if (speedsters.length >= 2 && obpKings.length >= 2) {
+    bonus += 7; labels.push(`⚡ Speed & OBP — Table-setters ignite the offense (+7)`);
+  } else if (speedsters.length >= 2) {
+    bonus += 4; labels.push(`⚡ Speed Merchant — ${speedsters[0].name} & ${speedsters[1].name} create havoc (+4)`);
+  }
+  return { total: bonus, labels };
+}
+
+function nhlStatComboBonus(players: Player[]): BonusResult {
+  const labels: string[] = [];
+  let bonus = 0;
+  const ppg100   = players.filter(p => p.position !== 'G_NHL' && (p.stats.nhlPoints ?? 0) >= 80);
+  const goalies  = players.filter(p => p.position === 'G_NHL' && (p.stats.savePct ?? 0) >= 0.918);
+  const ppSpec   = players.filter(p => (p.stats.powerPlayGoals ?? 0) >= 15);
+
+  if (ppg100.length >= 2) {
+    bonus += 9; labels.push(`🏒 Point Explosion — Two 80-point scorers (+9)`);
+  } else if (ppg100.length === 1) {
+    bonus += 4; labels.push(`🏒 Franchise Sniper — ${ppg100[0].name} leads all scorers (+4)`);
+  }
+  if (goalies.length > 0) {
+    bonus += 6; labels.push(`🧤 Brick Wall — Elite goaltending wins games (+6)`);
+  }
+  if (ppSpec.length >= 2) {
+    bonus += 5; labels.push(`⚡ Power-Play Factory — Two PP specialists (+5)`);
+  }
+  return { total: bonus, labels };
+}
+
+function soccerStatComboBonus(players: Player[]): BonusResult {
+  const labels: string[] = [];
+  let bonus = 0;
+  const scorers  = players.filter(p => (p.stats.soccerGoals ?? 0) >= 15);
+  const creators = players.filter(p => (p.stats.keyPasses ?? 0) >= 3.0);
+  const tacklers = players.filter(p => (p.stats.tacklesPG ?? 0) >= 4.0);
+  const gks      = players.filter(p => p.position === 'GK' && (p.stats.cleanSheets ?? 0) >= 15);
+
+  if (scorers.length >= 2) {
+    bonus += 8; labels.push(`⚽ Deadly Attack — ${scorers[0].name} & ${scorers[1].name} (+8)`);
+  } else if (scorers.length === 1) {
+    bonus += 4; labels.push(`⚽ Clinical Finisher — ${scorers[0].name} leads the line (+4)`);
+  }
+  if (creators.length >= 2) {
+    bonus += 7; labels.push(`🎯 Creative Engine — Two elite playmakers in the XI (+7)`);
+  } else if (creators.length === 1) {
+    bonus += 3; labels.push(`🎯 Maestro — ${creators[0].name} runs the show (+3)`);
+  }
+  if (tacklers.length >= 1 && gks.length > 0) {
+    bonus += 6; labels.push(`🛡️ Defensive Wall — Elite pressure + clean sheets (+6)`);
+  }
+  return { total: bonus, labels };
+}
+
 // ─── Stat-based combo bonuses ─────────────────────────────────────────────────
 function statComboBonus(players: Player[], sport: Sport): BonusResult {
+  if (sport === 'nfl') return nflStatComboBonus(players);
+  if (sport === 'mlb') return mlbStatComboBonus(players);
+  if (sport === 'nhl') return nhlStatComboBonus(players);
+  if (sport === 'epl' || sport === 'wcup') return soccerStatComboBonus(players);
   if (sport !== 'nba') return { total: 0, labels: [] };
 
   const labels: string[] = [];
@@ -548,7 +696,9 @@ export function computeTeamGSPR(
     return { gspr: 0, offenseScore: 0, defenseScore: 0, depthScore: 0, chemistryBonus: 0, tier: 'average', breakdown: [] };
   }
 
-  const offPlayers = players.filter(p => p.positionGroup === 'offense' || (sport === 'nba'));
+  const offPlayers = players.filter(p =>
+    p.positionGroup === 'offense' || sport === 'nba'
+  );
   const defPlayers = players.filter(p =>
     p.positionGroup === 'defense' ||
     p.positionGroup === 'pitching' ||

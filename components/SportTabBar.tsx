@@ -3,7 +3,7 @@
 import type { Sport } from '@/lib/types';
 import { SPORT_CONFIG } from '@/lib/constants';
 
-const SPORTS: Sport[] = ['nba', 'nfl', 'mlb', 'nhl'];
+const SPORTS: Sport[] = ['nba', 'nfl', 'mlb', 'nhl', 'epl', 'wcup'];
 
 interface Props {
   activeSport: Sport;

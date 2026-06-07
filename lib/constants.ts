@@ -52,6 +52,26 @@ export const SPORT_CONFIG: Record<Sport, {
     hasModes: false,
     tagline: 'Can your squad go 82-0?',
   },
+  epl: {
+    label: 'EPL',
+    emoji: '⚽',
+    primaryColor: '#3D195B',
+    accentColor: '#00FF85',
+    bgColor: '#0a0015',
+    gamesInSeason: 38,
+    hasModes: false,
+    tagline: 'Can your squad go unbeaten?',
+  },
+  wcup: {
+    label: 'World Cup',
+    emoji: '🌍',
+    primaryColor: '#326295',
+    accentColor: '#FFD700',
+    bgColor: '#000d1a',
+    gamesInSeason: 7,
+    hasModes: false,
+    tagline: 'Can your squad win the World Cup?',
+  },
 };
 
 // ─── Roster Templates ────────────────────────────────────────────────────────
@@ -112,18 +132,29 @@ export const MLB_PITCHING_ROSTER: RosterSlotTemplate[] = [
 ];
 
 export const NHL_OFFENSE_ROSTER: RosterSlotTemplate[] = [
-  { id: 'lw1', position: 'LW',    label: 'Left Wing 1',  group: 'offense', required: true },
-  { id: 'c1',  position: 'C_NHL', label: 'Center 1',     group: 'offense', required: true },
-  { id: 'rw1', position: 'RW',    label: 'Right Wing 1', group: 'offense', required: true },
-  { id: 'lw2', position: 'LW',    label: 'Left Wing 2',  group: 'offense', required: true },
-  { id: 'c2',  position: 'C_NHL', label: 'Center 2',     group: 'offense', required: true },
-  { id: 'rw2', position: 'RW',    label: 'Right Wing 2', group: 'offense', required: true },
+  { id: 'lw1', position: 'LW',    label: 'Left Wing',  group: 'offense', required: true },
+  { id: 'c1',  position: 'C_NHL', label: 'Center',     group: 'offense', required: true },
+  { id: 'rw1', position: 'RW',    label: 'Right Wing', group: 'offense', required: true },
 ];
 
 export const NHL_DEFENSE_ROSTER: RosterSlotTemplate[] = [
   { id: 'd1', position: 'D', label: 'Defenseman 1', group: 'defense', required: true },
   { id: 'd2', position: 'D', label: 'Defenseman 2', group: 'defense', required: true },
   { id: 'g', position: 'G_NHL', label: 'Goaltender', group: 'goalie', required: true },
+];
+
+export const SOCCER_ROSTER: RosterSlotTemplate[] = [
+  { id: 'gk',   position: 'GK',   label: 'Goalkeeper',    group: 'goalie',  required: true },
+  { id: 'rb_s', position: 'RB_S', label: 'Right Back',    group: 'defense', required: true },
+  { id: 'cb1',  position: 'CB_S', label: 'Centre Back',   group: 'defense', required: true },
+  { id: 'cb2',  position: 'CB_S', label: 'Centre Back 2', group: 'defense', required: true },
+  { id: 'lb_s', position: 'LB_S', label: 'Left Back',     group: 'defense', required: true },
+  { id: 'cdm',  position: 'CDM',  label: 'Def. Mid',      group: 'defense', required: true },
+  { id: 'cm1',  position: 'CM_S', label: 'Central Mid',   group: 'offense', required: true },
+  { id: 'cam',  position: 'CAM',  label: 'Attacking Mid', group: 'offense', required: true },
+  { id: 'rw_s', position: 'RW_S', label: 'Right Wing',    group: 'offense', required: true },
+  { id: 'st',   position: 'ST',   label: 'Striker',       group: 'offense', required: true },
+  { id: 'lw_s', position: 'LW_S', label: 'Left Wing',     group: 'offense', required: true },
 ];
 
 export function getRosterTemplates(sport: Sport, mode: DraftMode): RosterSlotTemplate[] {
@@ -142,6 +173,9 @@ export function getRosterTemplates(sport: Sport, mode: DraftMode): RosterSlotTem
       if (mode === 'offense') return NHL_OFFENSE_ROSTER;
       if (mode === 'defense') return NHL_DEFENSE_ROSTER;
       return [...NHL_OFFENSE_ROSTER, ...NHL_DEFENSE_ROSTER];
+    case 'epl':
+    case 'wcup':
+      return SOCCER_ROSTER;
   }
 }
 
@@ -163,7 +197,7 @@ export function getGsprTier(gspr: number) {
 // Each team gets 5-year windows from their founding (or sport minimum) to 2024.
 // Era ID format: `${sport}-${teamId}-${startYear}`
 
-const SPORT_ERA_START: Record<Sport, number> = { nba: 1970, nfl: 1970, mlb: 1920, nhl: 1970 };
+const SPORT_ERA_START: Record<Sport, number> = { nba: 1970, nfl: 1970, mlb: 1920, nhl: 1970, epl: 1992, wcup: 1970 };
 
 // Founding years for teams established AFTER their sport's era start
 const TEAM_FOUNDED: Partial<Record<string, number>> = {

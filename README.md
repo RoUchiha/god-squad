@@ -2,6 +2,8 @@
 
 > Build a team from a random historical era. Simulate a full season. Can you go undefeated?
 
+**[▶ Play Live Demo → god-squad.vercel.app](https://god-squad.vercel.app)**
+
 Inspired by [82-0.com](https://82-0.com) and [20-0.com](https://20-0.com).
 
 ## Sports Supported
@@ -9,6 +11,8 @@ Inspired by [82-0.com](https://82-0.com) and [20-0.com](https://20-0.com).
 - 🏈 **NFL** — Can your squad go 17-0?
 - ⚾ **MLB** — Can your squad go 162-0?
 - 🏒 **NHL** — Can your squad go 82-0?
+- ⚽ **Premier League** — Can your squad go unbeaten?
+- 🌍 **World Cup** — Can your squad win all 7 games?
 
 ## How to Play
 1. Select a sport tab

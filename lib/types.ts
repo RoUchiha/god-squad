@@ -1,4 +1,4 @@
-export type Sport = 'nba' | 'nfl' | 'mlb' | 'nhl';
+export type Sport = 'nba' | 'nfl' | 'mlb' | 'nhl' | 'epl' | 'wcup';
 
 export type DraftMode = 'offense' | 'defense' | 'combined';
 
@@ -30,7 +30,8 @@ export type Position =
   | 'DE' | 'DT' | 'LB' | 'CB' | 'S'           // NFL Defense
   | '1B' | '2B' | '3B' | 'SS' | 'LF' | 'CF' | 'RF' | 'DH' | 'C_MLB' // MLB Batting
   | 'SP' | 'RP' | 'CL'                          // MLB Pitching
-  | 'LW' | 'RW' | 'C_NHL' | 'D' | 'G_NHL';    // NHL
+  | 'LW' | 'RW' | 'C_NHL' | 'D' | 'G_NHL'     // NHL
+  | 'GK' | 'CB_S' | 'LB_S' | 'RB_S' | 'CDM' | 'CM_S' | 'CAM' | 'LW_S' | 'RW_S' | 'ST' | 'CF_S'; // Soccer
 
 export type PositionGroup = 'offense' | 'defense' | 'pitching' | 'goalie';
 
@@ -85,6 +86,14 @@ export interface PlayerStats {
   goalsAgainstAvg?: number;
   penaltyMinutes?: number;
   powerPlayGoals?: number;
+  // Soccer
+  soccerGoals?: number;
+  soccerAssists?: number;
+  soccerApps?: number;
+  cleanSheets?: number;
+  savePctSoc?: number;
+  keyPasses?: number;
+  tacklesPG?: number;
 }
 
 export interface Player {

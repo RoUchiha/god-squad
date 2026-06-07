@@ -6,9 +6,10 @@ import { MLB_TEAMS, fetchMLBPlayers } from '@/lib/sports/mlb';
 import { NHL_TEAMS, fetchNHLPlayers } from '@/lib/sports/nhl';
 import { NBA_TEAMS, fetchNBAPlayers } from '@/lib/sports/nba';
 import { NFL_TEAMS, fetchNFLPlayers } from '@/lib/sports/nfl';
+import { EPL_TEAMS, WCUP_TEAMS, fetchSoccerPlayers } from '@/lib/sports/soccer';
 
 const ParamsSchema = z.object({
-  sport: z.enum(['nba', 'nfl', 'mlb', 'nhl']),
+  sport: z.enum(['nba', 'nfl', 'mlb', 'nhl', 'epl', 'wcup']),
 });
 
 const QuerySchema = z.object({
@@ -21,6 +22,8 @@ const TEAMS_BY_SPORT: Record<Sport, HistoricalTeam[]> = {
   nhl: NHL_TEAMS,
   nba: NBA_TEAMS,
   nfl: NFL_TEAMS,
+  epl: EPL_TEAMS,
+  wcup: WCUP_TEAMS,
 };
 
 // Scores are absolute (2K-style 25–99 scale) — no pool normalization needed.
@@ -74,6 +77,10 @@ export async function GET(
         break;
       case 'nfl':
         players = await fetchNFLPlayers(team, era);
+        break;
+      case 'epl':
+      case 'wcup':
+        players = await fetchSoccerPlayers(team, era);
         break;
       default:
         return NextResponse.json({ error: 'Sport not implemented' }, { status: 501 });

@@ -40,6 +40,8 @@ export default function GameContainer() {
   const [playerToPlace, setPlayerToPlace] = useState<Player | null>(null);
   // After placing, show "Next Pick" prompt
   const [justPlacedSlotId, setJustPlacedSlotId] = useState<string | null>(null);
+  // Track used team/era combos so they don't repeat
+  const [usedEraIds, setUsedEraIds] = useState<Set<string>>(new Set());
 
   // Only NFL has offense/defense split mode
   const sportHasModes = SPORT_CONFIG[sport].hasModes;
@@ -73,7 +75,7 @@ export default function GameContainer() {
     }
   }, []);
 
-  const loadEra = useCallback(async (s: Sport) => {
+  const loadEra = useCallback(async (s: Sport, exclude?: Set<string>) => {
     const myId = ++loadIdRef.current;
     setIsLoadingEra(true);
     setError(null);
@@ -83,12 +85,14 @@ export default function GameContainer() {
     setJustPlacedSlotId(null);
     setPlayerToPlace(null);
     try {
-      const res = await fetch(`/api/era/${s}`);
+      const excludeParam = exclude && exclude.size > 0 ? `?exclude=${Array.from(exclude).join(',')}` : '';
+      const res = await fetch(`/api/era/${s}${excludeParam}`);
       if (!res.ok) throw new Error('Failed to load era');
       const data: EraResponse = await res.json();
       if (myId !== loadIdRef.current) return;
       setEra(data.era);
       setTeam(data.team);
+      setUsedEraIds(prev => new Set([...Array.from(prev), data.era.id]));
       await loadPlayers(s, data.team.id, data.era.id, myId);
     } catch {
       if (myId === loadIdRef.current) setError('Failed to load game data. Please try again.');
@@ -98,7 +102,7 @@ export default function GameContainer() {
   }, [loadPlayers]);
 
   // Load new era+team without clearing the existing roster (Next Pick)
-  const loadNextPick = useCallback(async (s: Sport) => {
+  const loadNextPick = useCallback(async (s: Sport, exclude: Set<string>) => {
     const myId = ++loadIdRef.current;
     setIsLoadingEra(true);
     setError(null);
@@ -106,12 +110,14 @@ export default function GameContainer() {
     setJustPlacedSlotId(null);
     setPlayerToPlace(null);
     try {
-      const res = await fetch(`/api/era/${s}`);
+      const excludeParam = exclude.size > 0 ? `?exclude=${Array.from(exclude).join(',')}` : '';
+      const res = await fetch(`/api/era/${s}${excludeParam}`);
       if (!res.ok) throw new Error('Failed to load era');
       const data: EraResponse = await res.json();
       if (myId !== loadIdRef.current) return;
       setEra(data.era);
       setTeam(data.team);
+      setUsedEraIds(prev => new Set([...Array.from(prev), data.era.id]));
       // NOTE: intentionally does NOT clear slots — roster persists
       await loadPlayers(s, data.team.id, data.era.id, myId);
     } catch {
@@ -130,7 +136,8 @@ export default function GameContainer() {
   // Load era on sport change
   useEffect(() => {
     setRerolls({ teamUsed: false, eraUsed: false, positionSwapUsed: false });
-    loadEra(sport);
+    setUsedEraIds(new Set());
+    loadEra(sport, new Set());
   }, [sport, loadEra]);
 
   const handleSportChange = (s: Sport) => {
@@ -175,17 +182,22 @@ export default function GameContainer() {
     setRerolls(r => ({ ...r, teamUsed: true }));
     setIsLoadingEra(true);
     try {
+      const excludeParam = usedEraIds.size > 0 ? `?exclude=${Array.from(usedEraIds).join(',')}` : '';
       let newTeam = team;
       let newEra = era;
-      for (let i = 0; i < 5; i++) {
-        const res = await fetch(`/api/era/${sport}`);
+      for (let i = 0; i < 8; i++) {
+        const res = await fetch(`/api/era/${sport}${excludeParam}`);
         const data: EraResponse = await res.json();
-        if (data.team.id !== team?.id) { newTeam = data.team; newEra = data.era; break; }
+        if (data.team.id !== team?.id && !usedEraIds.has(data.era.id)) {
+          newTeam = data.team; newEra = data.era; break;
+        }
       }
       if (newTeam && newTeam.id !== team?.id) {
         setTeam(newTeam);
         setEra(newEra);
-        setSlots(prev => prev.map(s => ({ ...s, player: null })));
+        setUsedEraIds(prev => new Set([...Array.from(prev), newEra.id]));
+        // Preserve existing roster — only reload the player pool
+        setPlayers([]);
         setJustPlacedSlotId(null);
         await loadPlayers(sport, newTeam.id, newEra.id);
       }
@@ -197,9 +209,24 @@ export default function GameContainer() {
   const handleEraReroll = async () => {
     if (rerolls.eraUsed) return;
     setRerolls(r => ({ ...r, eraUsed: true }));
-    setSlots(prev => prev.map(s => ({ ...s, player: null })));
+    // Preserve existing roster — only reload the era/player pool
     setJustPlacedSlotId(null);
-    await loadEra(sport);
+    setPlayers([]);
+    setIsLoadingEra(true);
+    try {
+      const excludeParam = usedEraIds.size > 0 ? `?exclude=${Array.from(usedEraIds).join(',')}` : '';
+      const res = await fetch(`/api/era/${sport}${excludeParam}`);
+      if (!res.ok) throw new Error('Failed to load era');
+      const data: EraResponse = await res.json();
+      setEra(data.era);
+      setTeam(data.team);
+      setUsedEraIds(prev => new Set([...Array.from(prev), data.era.id]));
+      await loadPlayers(sport, data.team.id, data.era.id);
+    } catch {
+      setError('Era reroll failed. Please try again.');
+    } finally {
+      setIsLoadingEra(false);
+    }
   };
 
   const handlePositionSwap = (slotId: string, position: Player['position'] | Player['position'][]) => {
@@ -211,7 +238,7 @@ export default function GameContainer() {
 
   const handleNextPick = () => {
     setJustPlacedSlotId(null);
-    loadNextPick(sport);
+    loadNextPick(sport, usedEraIds);
   };
 
   const handleSimulate = async () => {
@@ -240,7 +267,8 @@ export default function GameContainer() {
     setSlots(prev => prev.map(s => ({ ...s, player: null })));
     setRerolls({ teamUsed: false, eraUsed: false, positionSwapUsed: false });
     setJustPlacedSlotId(null);
-    loadEra(sport);
+    setUsedEraIds(new Set());
+    loadEra(sport, new Set());
   };
 
   const selectedPlayerIds = new Set(slots.map(s => s.player?.id).filter(Boolean) as string[]);
@@ -248,6 +276,9 @@ export default function GameContainer() {
 
   // Positions the placement picker should highlight in the pool
   const highlightPositions = playerToPlace ? [playerToPlace.position] : null;
+
+  // Lock the pool after picking until "Next Pick" is clicked
+  const pickLocked = justPlacedSlotId !== null && !isRosterFull;
 
   return (
     <div className={`theme-${sport} min-h-screen`}>
@@ -326,8 +357,10 @@ export default function GameContainer() {
             selectedIds={selectedPlayerIds}
             onSelect={handleSelectPlayer}
             sport={sport}
+            mode={mode}
             highlightPositions={highlightPositions}
             activePick={playerToPlace}
+            pickLocked={pickLocked}
           />
 
           <div className="hidden lg:block bg-white/5" />

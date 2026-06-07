@@ -25,11 +25,14 @@ const STAT_LABELS: Record<string, string> = {
   // NHL
   goals: 'G', nhlAssists: 'A', nhlPoints: 'PTS', plusMinus: '+/-',
   powerPlayGoals: 'PPG', savePct: 'SV%', goalsAgainstAvg: 'GAA', penaltyMinutes: 'PIM',
+  // Soccer
+  soccerGoals: 'G', soccerAssists: 'A', soccerApps: 'Apps', cleanSheets: 'CS',
+  savePctSoc: 'SV%', keyPasses: 'KP/G', tacklesPG: 'TKL/G',
 };
 
 function formatStatValue(key: string, value: number | undefined): string {
   if (value === undefined) return '—';
-  if (['fieldGoalPct', 'threePointPct', 'battingAvg', 'onBasePct', 'sluggingPct'].includes(key)) {
+  if (['fieldGoalPct', 'threePointPct', 'battingAvg', 'onBasePct', 'sluggingPct', 'savePctSoc'].includes(key)) {
     return value.toFixed(3).replace('0.', '.');
   }
   if (['ops', 'savePct'].includes(key)) {
@@ -58,7 +61,7 @@ function getKeyStats(player: Player, sport: Sport): [string, number | undefined]
       if (player.position === 'QB')
         return [['passingYards', s.passingYards], ['passingTDs', s.passingTDs], ['interceptions', s.interceptions], ['passerRating', s.passerRating]];
       if (player.position === 'RB')
-        return [['rushingYards', s.rushingYards], ['rushingTDs', s.rushingTDs], ['receptions', s.receptions]];
+        return [['rushingYards', s.rushingYards], ['rushingTDs', s.rushingTDs], ['receivingYards', s.receivingYards], ['receptions', s.receptions]];
       if (player.position === 'WR' || player.position === 'TE')
         return [['receptions', s.receptions], ['receivingYards', s.receivingYards], ['receivingTDs', s.receivingTDs]];
       if (player.position === 'DE' || player.position === 'DT')
@@ -77,6 +80,13 @@ function getKeyStats(player: Player, sport: Sport): [string, number | undefined]
       if (player.positionGroup === 'defense')
         return [['nhlPoints', s.nhlPoints], ['goals', s.goals], ['nhlAssists', s.nhlAssists], ['plusMinus', s.plusMinus], ['powerPlayGoals', s.powerPlayGoals]];
       return [['goals', s.goals], ['nhlAssists', s.nhlAssists], ['nhlPoints', s.nhlPoints], ['plusMinus', s.plusMinus], ['powerPlayGoals', s.powerPlayGoals]];
+    case 'epl':
+    case 'wcup':
+      if (player.position === 'GK')
+        return [['soccerApps', s.soccerApps], ['cleanSheets', s.cleanSheets], ['savePctSoc', s.savePctSoc]];
+      if (player.positionGroup === 'defense')
+        return [['soccerApps', s.soccerApps], ['soccerGoals', s.soccerGoals], ['soccerAssists', s.soccerAssists], ['tacklesPG', s.tacklesPG]];
+      return [['soccerApps', s.soccerApps], ['soccerGoals', s.soccerGoals], ['soccerAssists', s.soccerAssists], ['keyPasses', s.keyPasses]];
     default:
       return [];
   }
@@ -123,7 +133,12 @@ export default function PlayerCard({ player, sport, isSelected, isHighlighted, o
             )}
           </div>
           <div className="font-semibold text-sm text-white mt-1 truncate">{player.name}</div>
-          <div className="text-[10px] text-gray-600 mt-0.5">{player.yearsWithTeam}</div>
+          <div className="text-[10px] text-gray-600 mt-0.5">
+            {player.yearsWithTeam}
+            {player.bestSeasonYear && (
+              <span className="ml-1.5 text-blue-500/70">{player.bestSeasonYear}</span>
+            )}
+          </div>
         </div>
 
         <div

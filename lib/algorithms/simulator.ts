@@ -10,10 +10,12 @@ import { clamp, getAchievement } from '../utils';
 //   MLB (162 games):  ~8-12%  at max GSPR,  ~2-4%  at GSPR 900
 
 const WIN_PROB_CONFIG: Record<Sport, { base: number; range: number; power: number }> = {
-  nba: { base: 0.620, range: 0.365, power: 1.8 },  // [0.62 → 0.985]
-  nfl: { base: 0.580, range: 0.330, power: 1.8 },  // [0.58 → 0.910]
-  mlb: { base: 0.560, range: 0.432, power: 1.8 },  // [0.56 → 0.992]
-  nhl: { base: 0.600, range: 0.382, power: 1.8 },  // [0.60 → 0.982]
+  nba:  { base: 0.620, range: 0.365, power: 1.8 },
+  nfl:  { base: 0.580, range: 0.330, power: 1.8 },
+  mlb:  { base: 0.560, range: 0.432, power: 1.8 },
+  nhl:  { base: 0.600, range: 0.382, power: 1.8 },
+  epl:  { base: 0.570, range: 0.405, power: 1.8 },  // 38-game season, harder to go unbeaten
+  wcup: { base: 0.540, range: 0.440, power: 1.8 },  // 7 knockout games, high variance
 };
 
 export function getBaseWinProbability(gspr: number, sport: Sport): number {
