@@ -109,9 +109,16 @@ export default function GameContainer() {
   // This is the ONLY way a new pick begins. No randomness here; the queue
   // was shuffled once at game start.
   // ─────────────────────────────────────────────────────────────────────────
+  // Reset draft guard only after pickPhase transitions to 'ready' in a React commit —
+  // never synchronously inside advancePick, which would let a second handleDraft call
+  // slip through in the same tick.
+  useEffect(() => {
+    if (pickPhase === 'ready') {
+      draftGuardRef.current = false;
+    }
+  }, [pickPhase]);
+
   const advancePick = useCallback(async (queue: EraQueueItem[]) => {
-    // Reset the draft guard so the next pick can be committed
-    draftGuardRef.current = false;
     const myId = ++loadIdRef.current;
     setPickPhase('loading');
     setIsLoadingEra(true);
@@ -435,7 +442,7 @@ export default function GameContainer() {
              * flag are completely gone before new cards are shown.
              */
             <PlayerPool
-              key={era?.id}
+              key={`${era?.id}-${team?.id}`}
               players={players}
               isLoading={isLoadingPlayers}
               sport={sport}
