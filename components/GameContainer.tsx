@@ -19,6 +19,19 @@ import ModeSelector from './ModeSelector';
 import SimulationModal from './SimulationModal';
 import PlayerPlacementPicker from './PlayerPlacementPicker';
 
+// ─── Module-level pick guard ──────────────────────────────────────────────────
+// Lives OUTSIDE React's fiber system — no render cycle, no batching, no closures.
+// This is the first and hardest gate. A module-level variable is set
+// synchronously on the first click; any subsequent click that fires before
+// React even begins processing will hit this gate and return immediately.
+let _pickInFlight = false;
+function acquirePickLock(): boolean {
+  if (_pickInFlight) return false;
+  _pickInFlight = true;
+  return true;
+}
+function releasePickLock() { _pickInFlight = false; }
+
 export default function GameContainer() {
   const loadIdRef = useRef(0);
 
@@ -46,10 +59,13 @@ export default function GameContainer() {
   const [usedEraIds, setUsedEraIds] = useState<Set<string>>(new Set());
   const usedEraIdsRef = useRef<Set<string>>(new Set());
 
-  // Hard synchronous lock — set BEFORE any setState so the pool is blocked
-  // the instant a player is clicked, regardless of render timing.
-  const pickInProgressRef = useRef(false);
-  const [pickCommitted, setPickCommitted] = useState(false);
+  // ── Pick phase state machine ─────────────────────────────────────────────
+  // 'idle'    → pool is live, cards are clickable
+  // 'locked'  → pick in flight, pool shows skeleton (no clickable DOM nodes)
+  // 'placing' → slot picker modal open, pool wiped
+  // Transitions only happen through dedicated functions below.
+  type PickPhase = 'idle' | 'locked' | 'placing';
+  const [pickPhase, setPickPhase] = useState<PickPhase>('idle');
 
   // Only NFL has offense/defense split mode
   const sportHasModes = SPORT_CONFIG[sport].hasModes;
@@ -109,8 +125,8 @@ export default function GameContainer() {
     } finally {
       if (myId === loadIdRef.current) {
         setIsLoadingEra(false);
-        pickInProgressRef.current = false;
-        setPickCommitted(false);
+        releasePickLock();
+        setPickPhase('idle');
       }
     }
   }, [loadPlayers]);
@@ -143,9 +159,8 @@ export default function GameContainer() {
     } finally {
       if (myId === loadIdRef.current) {
         setIsLoadingEra(false);
-        // Unlock pick — new pool is ready for interaction
-        pickInProgressRef.current = false;
-        setPickCommitted(false);
+        releasePickLock();
+        setPickPhase('idle');
       }
     }
   }, [loadPlayers]);
@@ -161,8 +176,8 @@ export default function GameContainer() {
     setRerolls({ teamUsed: false, eraUsed: false, positionSwapUsed: false });
     usedEraIdsRef.current = new Set();
     setUsedEraIds(new Set());
-    pickInProgressRef.current = false;
-    setPickCommitted(false);
+    releasePickLock();
+    setPickPhase('idle');
     loadEra(sport, new Set());
   }, [sport, loadEra]);
 
@@ -185,35 +200,40 @@ export default function GameContainer() {
   const commitPickAndAdvance = (newSlots: typeof slots) => {
     setSlots(newSlots);
     setPlayerToPlace(null);
-    // Always clear the pool immediately so no cards exist to click
     setPlayers([]);
     const newFilled = newSlots.filter(s => s.required && s.player).length;
     const newTotal  = newSlots.filter(s => s.required).length;
     if (newFilled < newTotal) {
       loadNextPick(sport, usedEraIdsRef.current);
     } else {
-      // Required roster full — pool stays empty, unlock so user can remove/swap
-      pickInProgressRef.current = false;
-      setPickCommitted(false);
+      // Required roster full — release lock, go idle so user can remove/swap
+      releasePickLock();
+      setPickPhase('idle');
     }
   };
 
-  // Called by PlayerPool when a card is clicked.
+  // ── handleSelectPlayer ────────────────────────────────────────────────────
+  // Three independent layers of protection against double-picks:
   //
-  // flushSync forces React to update the DOM *synchronously* before this
-  // function continues — cards are physically removed from the DOM before any
-  // other logic runs. This is the standard React pattern for preventing
-  // double-actions (same technique used by form libraries, payment UIs, etc.).
-  // All previous approaches (ref guards, CSS locks, batched setState) still had
-  // a render-cycle gap. flushSync has zero gap.
+  // 1. Module-level `_pickInFlight` — set synchronously before React touches
+  //    anything. Completely outside React's fiber/reconciler. If two clicks
+  //    somehow fire before any re-render, only the first acquires the lock.
+  //
+  // 2. flushSync — forces React to synchronously re-render and remove all
+  //    player cards from the DOM before this function continues. Zero gap
+  //    between click and cards disappearing.
+  //
+  // 3. pickPhase state machine — PlayerPool renders no clickable nodes when
+  //    pickPhase !== 'idle', so even if a stale click event fires later it
+  //    lands on a skeleton div, not a PlayerCard.
   const handleSelectPlayer = (player: Player) => {
-    if (pickInProgressRef.current) return;
-    pickInProgressRef.current = true;
+    // Layer 1: module-level guard — fires before React does anything
+    if (!acquirePickLock()) return;
 
-    // Synchronous DOM update — pool cards are gone before the next line runs
+    // Layer 2: flushSync — synchronously wipe cards from DOM right now
     flushSync(() => {
       setPlayers([]);
-      setPickCommitted(true);
+      setPickPhase('locked');
     });
 
     if (swapMode) {
@@ -243,6 +263,8 @@ export default function GameContainer() {
     }
 
     // Multiple compatible slots — show picker (pool already wiped synchronously)
+    // Layer 3: pickPhase transitions to 'placing' — PlayerPool renders no cards
+    setPickPhase('placing');
     setPlayerToPlace(player);
     setJustPlacedSlotId(null);
   };
@@ -258,6 +280,7 @@ export default function GameContainer() {
   const handleSkipPick = () => {
     setPlayerToPlace(null);
     setJustPlacedSlotId(null);
+    setPickPhase('locked');
     loadNextPick(sport, usedEraIdsRef.current);
   };
 
@@ -361,8 +384,8 @@ export default function GameContainer() {
     setJustPlacedSlotId(null);
     setUsedEraIds(new Set());
     usedEraIdsRef.current = new Set();
-    pickInProgressRef.current = false;
-    setPickCommitted(false);
+    releasePickLock();
+    setPickPhase('idle');
     loadEra(sport, new Set());
   };
 
@@ -372,8 +395,8 @@ export default function GameContainer() {
   // Positions the placement picker should highlight in the pool
   const highlightPositions = playerToPlace ? [playerToPlace.position] : null;
 
-  // Lock pool: committed pick (ref flips synchronously on click), loading, or roster full
-  const pickLocked = pickCommitted || isLoadingEra || isLoadingPlayers;
+  // Pool is locked whenever we're not in 'idle' phase or are loading data
+  const pickLocked = pickPhase !== 'idle' || isLoadingEra || isLoadingPlayers;
 
   return (
     <div className={`theme-${sport} min-h-screen`}>
