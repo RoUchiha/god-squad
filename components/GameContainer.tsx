@@ -184,12 +184,14 @@ export default function GameContainer() {
   const commitPickAndAdvance = (newSlots: typeof slots) => {
     setSlots(newSlots);
     setPlayerToPlace(null);
+    // Always clear the pool immediately so no cards exist to click
+    setPlayers([]);
     const newFilled = newSlots.filter(s => s.required && s.player).length;
     const newTotal  = newSlots.filter(s => s.required).length;
     if (newFilled < newTotal) {
       loadNextPick(sport, usedEraIdsRef.current);
     } else {
-      // Roster full — unlock pick so user can still remove/swap
+      // Required roster full — pool stays empty, unlock so user can remove/swap
       pickInProgressRef.current = false;
       setPickCommitted(false);
     }
@@ -197,10 +199,12 @@ export default function GameContainer() {
 
   // Called by PlayerPool when a card is clicked
   const handleSelectPlayer = (player: Player) => {
-    // Hard lock — synchronous, survives any render delay
+    // Synchronous hard lock — fires before React re-renders.
+    // Also wipe players immediately so cards leave the DOM in the same batch.
     if (pickInProgressRef.current) return;
     pickInProgressRef.current = true;
     setPickCommitted(true);
+    setPlayers([]);  // Cards gone from DOM in this render — not just CSS-hidden
 
     if (swapMode) {
       const newSlots = slots.map(s => s.id === swapMode.slotId ? { ...s, player } : s);
@@ -224,13 +228,12 @@ export default function GameContainer() {
     }
 
     if (compatible.length === 0) {
-      // No slot fits — pick is still consumed, advance to next era
       setJustPlacedSlotId(null);
       loadNextPick(sport, usedEraIdsRef.current);
       return;
     }
 
-    // Multiple compatible slots — show picker (pool already locked via pickCommitted)
+    // Multiple compatible slots — show picker (pool already wiped above)
     setPlayerToPlace(player);
     setJustPlacedSlotId(null);
   };
