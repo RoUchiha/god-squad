@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import type {
   Sport, DraftMode, FilledRosterSlot, Player,
   EraResponse, PlayersResponse, SeasonResults,
@@ -197,14 +198,23 @@ export default function GameContainer() {
     }
   };
 
-  // Called by PlayerPool when a card is clicked
+  // Called by PlayerPool when a card is clicked.
+  //
+  // flushSync forces React to update the DOM *synchronously* before this
+  // function continues — cards are physically removed from the DOM before any
+  // other logic runs. This is the standard React pattern for preventing
+  // double-actions (same technique used by form libraries, payment UIs, etc.).
+  // All previous approaches (ref guards, CSS locks, batched setState) still had
+  // a render-cycle gap. flushSync has zero gap.
   const handleSelectPlayer = (player: Player) => {
-    // Synchronous hard lock — fires before React re-renders.
-    // Also wipe players immediately so cards leave the DOM in the same batch.
     if (pickInProgressRef.current) return;
     pickInProgressRef.current = true;
-    setPickCommitted(true);
-    setPlayers([]);  // Cards gone from DOM in this render — not just CSS-hidden
+
+    // Synchronous DOM update — pool cards are gone before the next line runs
+    flushSync(() => {
+      setPlayers([]);
+      setPickCommitted(true);
+    });
 
     if (swapMode) {
       const newSlots = slots.map(s => s.id === swapMode.slotId ? { ...s, player } : s);
@@ -214,7 +224,6 @@ export default function GameContainer() {
       return;
     }
 
-    // Check if there is exactly one open compatible slot → auto-place, no picker
     const compatible = slots.filter(s => {
       if (s.player) return false;
       return Array.isArray(s.position) ? s.position.includes(player.position) : s.position === player.position;
@@ -233,7 +242,7 @@ export default function GameContainer() {
       return;
     }
 
-    // Multiple compatible slots — show picker (pool already wiped above)
+    // Multiple compatible slots — show picker (pool already wiped synchronously)
     setPlayerToPlace(player);
     setJustPlacedSlotId(null);
   };
