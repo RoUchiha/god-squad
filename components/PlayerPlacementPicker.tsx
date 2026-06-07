@@ -27,8 +27,7 @@ export default function PlayerPlacementPicker({ player, slots, onPlace, onCancel
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-         style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
-         onClick={onCancel}>
+         style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
       <div
         className="w-full max-w-sm bg-[#111] border border-white/10 rounded-2xl overflow-hidden animate-slide-up"
         onClick={e => e.stopPropagation()}
@@ -86,13 +85,13 @@ export default function PlayerPlacementPicker({ player, slots, onPlace, onCancel
           )}
         </div>
 
-        {/* Cancel */}
+        {/* Skip — advances era without placing */}
         <div className="px-4 pb-4">
           <button
             onClick={onCancel}
             className="w-full py-2.5 rounded-xl text-sm text-gray-500 hover:text-gray-300 border border-white/5 hover:border-white/10 transition-colors"
           >
-            Cancel
+            Skip this player → next era
           </button>
         </div>
       </div>

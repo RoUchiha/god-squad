@@ -38,13 +38,17 @@ export default function GameContainer() {
 
   // Placement picker state
   const [playerToPlace, setPlayerToPlace] = useState<Player | null>(null);
-  // After placing, show "Next Pick" prompt
   const [justPlacedSlotId, setJustPlacedSlotId] = useState<string | null>(null);
   // Track used team/era combos so they don't repeat.
   // The ref is kept in sync with the state so async handlers always read
   // the latest value without stale-closure bugs.
   const [usedEraIds, setUsedEraIds] = useState<Set<string>>(new Set());
   const usedEraIdsRef = useRef<Set<string>>(new Set());
+
+  // Hard synchronous lock — set BEFORE any setState so the pool is blocked
+  // the instant a player is clicked, regardless of render timing.
+  const pickInProgressRef = useRef(false);
+  const [pickCommitted, setPickCommitted] = useState(false);
 
   // Only NFL has offense/defense split mode
   const sportHasModes = SPORT_CONFIG[sport].hasModes;
@@ -102,13 +106,19 @@ export default function GameContainer() {
     } catch {
       if (myId === loadIdRef.current) setError('Failed to load game data. Please try again.');
     } finally {
-      if (myId === loadIdRef.current) setIsLoadingEra(false);
+      if (myId === loadIdRef.current) {
+        setIsLoadingEra(false);
+        pickInProgressRef.current = false;
+        setPickCommitted(false);
+      }
     }
   }, [loadPlayers]);
 
-  // Load new era+team without clearing the existing roster (Next Pick)
+  // Load new era+team without clearing the existing roster.
+  // Also resets the pick lock so the next pool is interactive.
   const loadNextPick = useCallback(async (s: Sport, exclude: Set<string>) => {
     const myId = ++loadIdRef.current;
+    // Sync: clear pool and lock UI before first await
     setIsLoadingEra(true);
     setError(null);
     setPlayers([]);
@@ -125,12 +135,17 @@ export default function GameContainer() {
       const next2 = new Set([...Array.from(usedEraIdsRef.current), data.era.id]);
       usedEraIdsRef.current = next2;
       setUsedEraIds(next2);
-      // NOTE: intentionally does NOT clear slots — roster persists
+      // roster persists — only pool changes
       await loadPlayers(s, data.team.id, data.era.id, myId);
     } catch {
       if (myId === loadIdRef.current) setError('Failed to load next pick. Please try again.');
     } finally {
-      if (myId === loadIdRef.current) setIsLoadingEra(false);
+      if (myId === loadIdRef.current) {
+        setIsLoadingEra(false);
+        // Unlock pick — new pool is ready for interaction
+        pickInProgressRef.current = false;
+        setPickCommitted(false);
+      }
     }
   }, [loadPlayers]);
 
@@ -145,6 +160,8 @@ export default function GameContainer() {
     setRerolls({ teamUsed: false, eraUsed: false, positionSwapUsed: false });
     usedEraIdsRef.current = new Set();
     setUsedEraIds(new Set());
+    pickInProgressRef.current = false;
+    setPickCommitted(false);
     loadEra(sport, new Set());
   }, [sport, loadEra]);
 
@@ -159,37 +176,77 @@ export default function GameContainer() {
     setSlots(getRosterTemplates(sport, m).map(t => ({ ...t, player: null })));
   };
 
-  // When user clicks a player from the pool
+  // ── Pick flow ────────────────────────────────────────────────────────────────
+  // Rule: one pick per era. The moment a player is clicked the ref flips to
+  // true synchronously — before React re-renders — so a second click is
+  // rejected even if the UI hasn't visually locked yet.
+
+  const commitPickAndAdvance = (newSlots: typeof slots) => {
+    setSlots(newSlots);
+    setPlayerToPlace(null);
+    const newFilled = newSlots.filter(s => s.required && s.player).length;
+    const newTotal  = newSlots.filter(s => s.required).length;
+    if (newFilled < newTotal) {
+      loadNextPick(sport, usedEraIdsRef.current);
+    } else {
+      // Roster full — unlock pick so user can still remove/swap
+      pickInProgressRef.current = false;
+      setPickCommitted(false);
+    }
+  };
+
+  // Called by PlayerPool when a card is clicked
   const handleSelectPlayer = (player: Player) => {
+    // Hard lock — synchronous, survives any render delay
+    if (pickInProgressRef.current) return;
+    pickInProgressRef.current = true;
+    setPickCommitted(true);
+
     if (swapMode) {
-      // Swap mode: directly place in the swap slot, then auto-advance
       const newSlots = slots.map(s => s.id === swapMode.slotId ? { ...s, player } : s);
-      setSlots(newSlots);
       setSwapMode(null);
       setJustPlacedSlotId(swapMode.slotId);
-      const newFilled = newSlots.filter(s => s.required && s.player).length;
-      const newTotal = newSlots.filter(s => s.required).length;
-      if (newFilled < newTotal) {
-        loadNextPick(sport, usedEraIdsRef.current);
-      }
+      commitPickAndAdvance(newSlots);
       return;
     }
-    // Open the placement picker
+
+    // Check if there is exactly one open compatible slot → auto-place, no picker
+    const compatible = slots.filter(s => {
+      if (s.player) return false;
+      return Array.isArray(s.position) ? s.position.includes(player.position) : s.position === player.position;
+    });
+
+    if (compatible.length === 1) {
+      const newSlots = slots.map(s => s.id === compatible[0].id ? { ...s, player } : s);
+      setJustPlacedSlotId(compatible[0].id);
+      commitPickAndAdvance(newSlots);
+      return;
+    }
+
+    if (compatible.length === 0) {
+      // No slot fits — pick is still consumed, advance to next era
+      setJustPlacedSlotId(null);
+      loadNextPick(sport, usedEraIdsRef.current);
+      return;
+    }
+
+    // Multiple compatible slots — show picker (pool already locked via pickCommitted)
     setPlayerToPlace(player);
     setJustPlacedSlotId(null);
   };
 
-  // When user picks a slot in the placement picker — auto-advance to next era
+  // Called by PlayerPlacementPicker when a slot is chosen
   const handlePlacePlayer = (player: Player, slotId: string) => {
     const newSlots = slots.map(s => s.id === slotId ? { ...s, player } : s);
-    setSlots(newSlots);
-    setPlayerToPlace(null);
     setJustPlacedSlotId(slotId);
-    const newFilled = newSlots.filter(s => s.required && s.player).length;
-    const newTotal = newSlots.filter(s => s.required).length;
-    if (newFilled < newTotal) {
-      loadNextPick(sport, usedEraIdsRef.current);
-    }
+    commitPickAndAdvance(newSlots);
+  };
+
+  // Called by PlayerPlacementPicker "Skip" — pick consumed, no placement
+  const handleSkipPick = () => {
+    setPlayerToPlace(null);
+    setJustPlacedSlotId(null);
+    loadNextPick(sport, usedEraIdsRef.current);
   };
 
   const handleRemovePlayer = (slotId: string) => {
@@ -263,10 +320,6 @@ export default function GameContainer() {
     setSwapMode({ slotId, position });
   };
 
-  const handleNextPick = () => {
-    setJustPlacedSlotId(null);
-    loadNextPick(sport, usedEraIdsRef.current);
-  };
 
   const handleSimulate = async () => {
     if (!isRosterFull) return;
@@ -295,6 +348,9 @@ export default function GameContainer() {
     setRerolls({ teamUsed: false, eraUsed: false, positionSwapUsed: false });
     setJustPlacedSlotId(null);
     setUsedEraIds(new Set());
+    usedEraIdsRef.current = new Set();
+    pickInProgressRef.current = false;
+    setPickCommitted(false);
     loadEra(sport, new Set());
   };
 
@@ -304,8 +360,8 @@ export default function GameContainer() {
   // Positions the placement picker should highlight in the pool
   const highlightPositions = playerToPlace ? [playerToPlace.position] : null;
 
-  // Lock the pool while loading the next era (auto-advance) or while roster is full
-  const pickLocked = isLoadingEra || isLoadingPlayers;
+  // Lock pool: committed pick (ref flips synchronously on click), loading, or roster full
+  const pickLocked = pickCommitted || isLoadingEra || isLoadingPlayers;
 
   return (
     <div className={`theme-${sport} min-h-screen`}>
@@ -436,7 +492,7 @@ export default function GameContainer() {
           player={playerToPlace}
           slots={slots}
           onPlace={handlePlacePlayer}
-          onCancel={() => setPlayerToPlace(null)}
+          onCancel={handleSkipPick}
         />
       )}
 
